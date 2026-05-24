@@ -39,7 +39,7 @@ class BarChars:
 
 HOME       = Path(os.path.expanduser('~'))
 MIN_WIDTH    = 40
-MAX_WIDTH    = 160
+MAX_WIDTH    = 120
 NARROW_WIDTH = 55
 MEDIUM_WIDTH = 80
 SOFT_LIMIT = 150_000
