@@ -38,6 +38,7 @@ class BarChars:
 
 
 HOME       = Path(os.path.expanduser('~'))
+CLAUDE_DIR = Path(os.environ.get('CLAUDE_CONFIG_DIR', str(HOME / '.claude')))
 MIN_WIDTH    = 40
 MAX_WIDTH    = 120
 NARROW_WIDTH = 55
@@ -54,7 +55,7 @@ def terminal_width() -> int:
     except (OSError, ValueError):
         pass
     try:
-        w = int((HOME / '.claude' / 'terminal-width').read_text().strip())
+        w = int((CLAUDE_DIR / 'terminal-width').read_text().strip())
         if w > 0:
             return w
     except (OSError, ValueError):
@@ -381,7 +382,7 @@ class Workspace:
     @property
     def plugins(self) -> str:
         seen: dict[str, None] = {}
-        candidates = [HOME / '.claude' / 'settings.json']
+        candidates = [CLAUDE_DIR / 'settings.json']
         if self.project_dir:
             candidates.append(Path(self.project_dir) / '.claude' / 'settings.json')
         for sf in candidates:
@@ -553,7 +554,7 @@ class TokenLog:
 
     @classmethod
     def update(cls, session_id: str, today: str, total_in: int, cache_read: int, total_out: int) -> TokenLog:
-        log = HOME / '.claude' / 'statusline-tokens.log'
+        log = CLAUDE_DIR / 'statusline-tokens.log'
         lines = []
         if log.exists():
             for ln in log.read_text().splitlines():
@@ -595,7 +596,7 @@ class TokenRate:
     def update(cls, session_id: str, total_in: int, total_out: int) -> int:
         if not session_id:
             return 0
-        log = HOME / '.claude' / 'statusline-token-rate.log'
+        log = CLAUDE_DIR / 'statusline-token-rate.log'
         now = time.time()
         rows: list[tuple[float, str, int, int]] = []
         if log.exists():
@@ -630,7 +631,7 @@ class TokenRate:
     def history(cls, session_id: str, n_buckets: int, window: float) -> list[int]:
         if n_buckets <= 0 or not session_id:
             return []
-        log = HOME / '.claude' / 'statusline-token-rate.log'
+        log = CLAUDE_DIR / 'statusline-token-rate.log'
         now = time.time()
         samples: list[tuple[float, int, int]] = []
         if log.exists():
@@ -671,7 +672,7 @@ class TokenRate:
         """Return (in_active, out_active) — True if that count grew in the last `window` seconds."""
         if not session_id:
             return False, False
-        log = HOME / '.claude' / 'statusline-token-rate.log'
+        log = CLAUDE_DIR / 'statusline-token-rate.log'
         if not log.exists():
             return False, False
         now = time.time()
@@ -861,7 +862,7 @@ class RunningSubagents:
         project_slug = project_dir.replace('/', '-')
         if project_slug.startswith('-'):
             project_slug = project_slug[1:]
-        subagents_dir = HOME / '.claude' / 'projects' / f'-{project_slug}' / session_id / 'subagents'
+        subagents_dir = CLAUDE_DIR / 'projects' / f'-{project_slug}' / session_id / 'subagents'
         if not subagents_dir.is_dir():
             return cls()
         now = time.time()
@@ -2658,7 +2659,7 @@ def resolve_theme(cli_name: str | None) -> Theme:
     if env in THEMES:
         return THEMES[env]
     try:
-        cfg = (HOME / '.claude' / 'statusline-theme').read_text().strip()
+        cfg = (CLAUDE_DIR / 'statusline-theme').read_text().strip()
         if cfg in THEMES:
             return THEMES[cfg]
     except OSError:
@@ -2704,7 +2705,7 @@ def main() -> None:
 
     # Write payload so the multi-session observer can index it.
     try:
-        out_dir = HOME / '.claude' / 'statusline-output'
+        out_dir = CLAUDE_DIR / 'statusline-output'
         out_dir.mkdir(parents=True, exist_ok=True)
         (out_dir / f'statusline.{int(time.time())}.json').write_text(json.dumps(info))
     except OSError:
