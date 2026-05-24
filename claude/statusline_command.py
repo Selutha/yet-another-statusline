@@ -304,7 +304,9 @@ class Model(NamedTuple):
     display_name: str = ''
 
     @classmethod
-    def from_dict(cls, d: dict) -> Model:
+    def from_dict(cls, d) -> Model:
+        if isinstance(d, str):
+            return cls(id=d, display_name='')
         return cls(id=d.get('id', ''), display_name=d.get('display_name', ''))
 
     @property
