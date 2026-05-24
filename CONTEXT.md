@@ -54,7 +54,17 @@ The text colour painted on top of the model-pill background. Two slots per theme
 ### Subagents
 
 **Running Subagent**:
-A subagent whose transcript jsonl was written to within the last 20 seconds. Sourced from `~/.claude/projects/<slug>/<session>/subagents/*.meta.json` paired with the sibling `.jsonl`. Drops off the statusline 20s after the subagent finishes — long enough to read a quick spawn-and-die agent's tail, short enough that a dead row doesn't linger.
+A subagent whose transcript jsonl was written to within the last 20 seconds. Renders as a **row pair** at widths >100 cols:
+- Identity row: `▶ agent_type · description ... model · ↑output · elapsed`
+- Continuation row: `└ <current-activity> ...   <N>K · $cost`
+
+At width ≤100 cols the pair collapses to a single row (description and tool args dropped).
+
+`last_activity` typed vocabulary: `tool_use` → `<Tool>[<arg>]`; `thinking` → `(thinking)`; `text` → `(replying)`.
+
+The ` <N>K` field (hourglass = nf-fa-hourglass_half) in the continuation row is coloured by the **Compaction-Risk Zone** (green ≤50K, yellow ≤80K, orange ≤150K, red >150K) — the same thresholds as the main context bar.
+
+Sourced from `~/.claude/projects/<slug>/<session>/subagents/*.meta.json` paired with the sibling `.jsonl`. Drops off the statusline 20s after the subagent finishes — long enough to read a quick spawn-and-die agent's tail, short enough that a dead row doesn't linger.
 _Avoid_: "loaded subagent" (ambiguous — sounds like a config-time concept).
 
 ### Task tracking

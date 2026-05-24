@@ -41,13 +41,25 @@ PLUGINS_PROGRESSION = (
     ['openspec@0.1.0', 'frontend-design@0.3.2', 'rocky@0.1.0'],
 )
 
-# (agentType, description, billed_in, output_tokens) — empty list means no subagent active
+# [(name, done, total), ...] per animation stage. Both specs hit 100% before the
+# final empty stage clears them.
+OPENSPEC_PROGRESSION = (
+    [],
+    [('port-statusline-to-python', 1, 8)],
+    [('port-statusline-to-python', 3, 8), ('add-gradient-engine', 2, 8)],
+    [('port-statusline-to-python', 6, 8), ('add-gradient-engine', 5, 8)],
+    [('port-statusline-to-python', 8, 8), ('add-gradient-engine', 8, 8)],
+    [],
+)
+
+# (agentType, description, billed_in, output_tokens, action) — empty list means no subagent active
+# action is (tool_name, input_dict) or None; omit to leave activity blank.
 SUBAGENTS_PROGRESSION = (
     [],
-    [('explore',         'Search codebase - looking for token tracking', 0, 0)],
-    [('explore',         'Search codebase - looking for token tracking', 0, 0)],
-    [('general-purpose', 'Fix sparkline - update bucket algorithm',      0, 0)],
-    [('general-purpose', 'Fix sparkline - update bucket algorithm',      0, 0)],
+    [('explore',         'Search codebase - looking for token tracking', 0, 0, ('Bash',  {'command': 'grep -rn "billed_in" claude/statusline_command.py'}))],
+    [('explore',         'Search codebase - looking for token tracking', 0, 0, ('Read',  {'file_path': 'claude/statusline_command.py'}))],
+    [('general-purpose', 'Fix sparkline - update bucket algorithm',      0, 0, ('Edit',  {'file_path': 'claude/statusline_command.py', 'old_string': 'old', 'new_string': 'new'}))],
+    [('general-purpose', 'Fix sparkline - update bucket algorithm',      0, 0, None)],
     [],
 )
 
@@ -61,10 +73,12 @@ DEMO_TASKS = (
 
 # pct below which no TaskList is shown (lets the demo open without it).
 TASKS_START_PCT = 0.15
+# pct at and above which tasks are cleared (wind-down state).
+TASKS_END_PCT = 0.88
 
 
 def task_state_for(pct: float) -> list[tuple[str, str, str]]:
-    if pct < TASKS_START_PCT:
+    if pct < TASKS_START_PCT or pct >= TASKS_END_PCT:
         return []
     n = len(DEMO_TASKS)
     progress = (pct - TASKS_START_PCT) / (1.0 - TASKS_START_PCT)
@@ -87,8 +101,6 @@ def build_synthetic_env(tmpdir: Path, session_id: str) -> None:
 
     (claude / 'projects' / session_id).mkdir(parents=True)
     (project / 'src').mkdir(parents=True)
-    (project / 'openspec' / 'changes' / 'add-skills-row').mkdir(parents=True)
-    (project / 'openspec' / 'changes' / 'port-statusline-to-python').mkdir(parents=True)
 
     (project / 'README.md').write_text('# my-project\n')
     (project / 'src' / 'main.py').write_text("print('hi')\n")
@@ -119,13 +131,6 @@ def build_synthetic_env(tmpdir: Path, session_id: str) -> None:
         '3219308b1c0d4f5a8e7b6c9d2f0a1e3b4c5d6e7f\n'
     )
 
-    (project / 'openspec' / 'changes' / 'add-skills-row' / 'tasks.md').write_text(
-        '- [x] one\n- [x] two\n- [x] three\n- [ ] four\n'
-    )
-    (project / 'openspec' / 'changes' / 'port-statusline-to-python' / 'tasks.md').write_text(
-        '- [x] one\n- [ ] two\n- [ ] three\n- [ ] four\n'
-    )
-
     write_settings(claude, [])
     write_transcript(claude / 'projects' / session_id / f'{session_id}.jsonl', [], 0, 0, 0, 0)
     today = datetime.now().strftime('%Y-%m-%d')
@@ -138,9 +143,12 @@ def write_subagents(
     claude_dir:  Path,
     session_id:  str,
     project_dir: Path,
-    subagents:   list[tuple[str, str, int, int]],
+    subagents:   list[tuple],
 ) -> None:
-    """Each subagent entry: (agentType, description, billed_in, output_tokens)."""
+    """Each subagent entry: (agentType, description, billed_in, output_tokens[, action]).
+
+    action is (tool_name, input_dict) or None; if absent or None, content is omitted.
+    """
     project_slug = str(project_dir).replace('/', '-').lstrip('-')
     subagents_dir = claude_dir / 'projects' / f'-{project_slug}' / session_id / 'subagents'
     subagents_dir.mkdir(parents=True, exist_ok=True)
@@ -148,13 +156,15 @@ def write_subagents(
         f.unlink()
     now = time.time()
     ts  = datetime.now().astimezone().isoformat()
-    for i, (agent_type, description, billed_in, output_tokens) in enumerate(subagents, 1):
+    for i, row in enumerate(subagents, 1):
+        agent_type, description, billed_in, output_tokens = row[:4]
+        action = row[4] if len(row) > 4 else None
         name = f'demo-subagent-{i}'
         (subagents_dir / f'{name}.meta.json').write_text(
             json.dumps({'agentType': agent_type, 'description': description})
         )
         jsonl = subagents_dir / f'{name}.jsonl'
-        if billed_in or output_tokens:
+        if billed_in or output_tokens or action:
             # cache_creation carries the bulk; input_tokens gets the remainder
             cache_creation = int(billed_in * 0.7)
             input_tokens   = billed_in - cache_creation
@@ -172,6 +182,11 @@ def write_subagents(
                     },
                 },
             }
+            if action is not None:
+                tool_name, input_dict = action
+                entry['message']['content'] = [
+                    {'type': 'tool_use', 'name': tool_name, 'input': input_dict}
+                ]
             jsonl.write_text(json.dumps(entry) + '\n')
         else:
             jsonl.write_text('')
@@ -290,6 +305,16 @@ DEMO_DURATION = DEMO_STEPS * DEMO_DELAY  # real seconds the demo runs
 # the full graph width over the course of the demo
 DEMO_TOKEN_WINDOW = DEMO_DURATION / 2
 
+# Sparkline shape: small baseline delta per step with isolated bursts so peaks
+# of varying heights sit on a quiet floor instead of forming a dense ribbon.
+RATE_BASE_DELTA = 250
+RATE_PEAK_PROFILE = {
+    8:  28_000,
+    22: 82_000,
+    37: 18_000,
+    49: 56_000,
+}
+
 
 def animate(env: dict, raw: dict, tmpdir: Path, session_id: str, steps: int = DEMO_STEPS, delay: float = DEMO_DELAY) -> None:
     raw.setdefault('context_window', {})
@@ -300,14 +325,13 @@ def animate(env: dict, raw: dict, tmpdir: Path, session_id: str, steps: int = DE
     project      = tmpdir / 'my-project'
     transcript_p = claude / 'projects' / session_id / f'{session_id}.jsonl'
     rate_log     = claude / 'statusline-token-rate.log'
-    moving_spec  = project / 'openspec' / 'changes' / 'port-statusline-to-python' / 'tasks.md'
-    spec_total   = 8
 
     rng = random.Random(42)
     KEEP = max(300.0, DEMO_TOKEN_WINDOW * 4)
 
     sys.stdout.write('\n\n')
     last_lines = 0
+    rate_cumul_in = 0
 
     for i in range(steps + 1):
         pct = i / steps
@@ -320,28 +344,25 @@ def animate(env: dict, raw: dict, tmpdir: Path, session_id: str, steps: int = DE
         skill_idx    = min(int(pct * len(SKILLS_PROGRESSION)),    len(SKILLS_PROGRESSION) - 1)
         plugin_idx   = min(int(pct * len(PLUGINS_PROGRESSION)),   len(PLUGINS_PROGRESSION) - 1)
         subagent_idx = min(int(pct * len(SUBAGENTS_PROGRESSION)), len(SUBAGENTS_PROGRESSION) - 1)
+        openspec_idx = min(int(pct * len(OPENSPEC_PROGRESSION)),  len(OPENSPEC_PROGRESSION) - 1)
         skills_now   = SKILLS_PROGRESSION[skill_idx]
         plugins_now  = PLUGINS_PROGRESSION[plugin_idx]
         subagent_now = SUBAGENTS_PROGRESSION[subagent_idx]
-
-        spec_done = min(spec_total, int(pct * spec_total) + 1)
-        moving_spec.write_text(
-            ''.join(f'- [x] task {n}\n' for n in range(1, spec_done + 1))
-            + ''.join(f'- [ ] task {n}\n' for n in range(spec_done + 1, spec_total + 1))
-        )
+        openspec_now = OPENSPEC_PROGRESSION[openspec_idx]
 
         tasks_now = task_state_for(pct)
         write_transcript(transcript_p, skills_now, total_in, total_cc, total_cr, total_out, tasks=tasks_now)
         write_settings(claude, plugins_now)
         write_subagents(claude, session_id, project, subagent_now)
+        write_openspec_changes(project, openspec_now)
 
         now = time.time()
-        cumul_in = total_in + total_cc
+        rate_cumul_in += RATE_PEAK_PROFILE.get(i, RATE_BASE_DELTA)
         cumul_out = total_out
 
         existing = rate_log.read_text().splitlines() if rate_log.exists() else []
         kept = [ln for ln in existing if ln and now - float(ln.split()[0]) <= KEEP]
-        kept.append(f'{now:.3f} {session_id} {cumul_in} {cumul_out}')
+        kept.append(f'{now:.3f} {session_id} {rate_cumul_in} {cumul_out}')
         rate_log.write_text('\n'.join(kept) + '\n')
 
         raw['context_window']['total_input_tokens']  = total_in
@@ -375,7 +396,7 @@ class ScenarioConfig:
     context_pct:   float                     = 0.20
     skills:        list[str]                 = field(default_factory=list)
     plugins:       list[str]                 = field(default_factory=list)
-    subagents:     list[tuple[str, str, int, int]] = field(default_factory=list)
+    subagents:     list[tuple]                     = field(default_factory=list)
     openspec:      list[tuple[str, int, int]]= field(default_factory=list)
     tasks:         list[tuple[str, str, str]]= field(default_factory=list)
     five_hour_pct: float                     = 30.0
@@ -446,9 +467,9 @@ SCENARIOS: list[ScenarioConfig] = [
         skills      = ['grill-me', 'caveman', 'tdd'],
         plugins     = ['openspec@0.1.0', 'frontend-design@0.3.2'],
         subagents   = [
-            ('explore',         'Search codebase - looking for token tracking', 3_200,   420),
-            ('general-purpose', 'Fix sparkline - update bucket algorithm',      8_700, 1_850),
-            ('claude',          'Review border math implementation',            5_400,   980),
+            ('explore',         'Search codebase - looking for token tracking', 3_200,   420, ('Bash', {'command': 'grep -rn "billed_in" claude/statusline_command.py'})),
+            ('general-purpose', 'Fix sparkline - update bucket algorithm',      8_700, 1_850, ('Edit', {'file_path': 'claude/statusline_command.py', 'old_string': 'a', 'new_string': 'b'})),
+            ('claude',          'Review border math implementation',            5_400,   980, ('Read', {'file_path': 'claude/statusline_command.py'})),
         ],
         five_hour_pct = 46.0,
         seven_day_pct = 37.0,
@@ -463,9 +484,9 @@ SCENARIOS: list[ScenarioConfig] = [
         skills      = ['grill-me', 'caveman', 'tdd', 'rocky:rocky'],
         plugins     = ['openspec@0.1.0', 'frontend-design@0.3.2', 'rocky@0.1.0'],
         subagents   = [
-            ('explore',         'Search codebase - looking for token tracking', 3_200,   420),
-            ('general-purpose', 'Fix sparkline - update bucket algorithm',      8_700, 1_850),
-            ('claude',          'Review border math implementation',            5_400,   980),
+            ('explore',         'Search codebase - looking for token tracking', 3_200,   420, ('Bash', {'command': 'grep -rn "billed_in" claude/statusline_command.py'})),
+            ('general-purpose', 'Fix sparkline - update bucket algorithm',      8_700, 1_850, ('Edit', {'file_path': 'claude/statusline_command.py', 'old_string': 'a', 'new_string': 'b'})),
+            ('claude',          'Review border math implementation',            5_400,   980, ('Read', {'file_path': 'claude/statusline_command.py'})),
         ],
         openspec    = [
             ('add-gradient-engine',        6, 8),
