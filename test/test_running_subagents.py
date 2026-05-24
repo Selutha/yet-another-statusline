@@ -38,21 +38,35 @@ def _write_agent(
     return meta, jsonl
 
 
-def _assistant_line(msg_id: str, *, input_tokens: int = 0, cache_creation: int = 0, output_tokens: int = 0, timestamp: str | None = None) -> str:
-    d = {
+def _assistant_line(
+    msg_id: str,
+    *,
+    input_tokens: int       = 0,
+    cache_creation: int     = 0,
+    cache_read: int         = 0,
+    output_tokens: int      = 0,
+    timestamp: str | None   = None,
+    model: str | None       = None,
+    content: list | None    = None,
+) -> str:
+    d: dict = {
         'type': 'assistant',
         'message': {
             'id': msg_id,
             'usage': {
                 'input_tokens': input_tokens,
                 'cache_creation_input_tokens': cache_creation,
-                'cache_read_input_tokens': 0,
+                'cache_read_input_tokens': cache_read,
                 'output_tokens': output_tokens,
             },
         },
     }
     if timestamp:
         d['timestamp'] = timestamp
+    if model is not None:
+        d['message']['model'] = model
+    if content is not None:
+        d['message']['content'] = content
     return json.dumps(d) + '\n'
 
 
@@ -161,3 +175,75 @@ def test_subagents_sorted_by_first_timestamp_ascending(tmp_home: Path) -> None:
 
     result = sl.RunningSubagents.from_session(SESSION_ID, PROJECT_DIR)
     assert [s.first_timestamp for s in result.subagents] == sorted(s.first_timestamp for s in result.subagents)
+
+
+def test_fresh_entry_with_model_and_live_fields(tmp_home: Path) -> None:
+    now = time.time()
+    sdir = _subagents_dir(tmp_home)
+    _write_agent(
+        sdir, 'agent-rich',
+        jsonl_lines=[
+            _assistant_line(
+                'm1',
+                input_tokens=100,
+                cache_creation=50,
+                cache_read=200,
+                output_tokens=80,
+                model='claude-sonnet-4-6',
+                content=[{'type': 'tool_use', 'name': 'Bash', 'input': {'command': 'pytest'}}],
+            ),
+        ],
+        mtime=now,
+    )
+
+    result = sl.RunningSubagents.from_session(SESSION_ID, PROJECT_DIR)
+    sub = result.subagents[0]
+    assert sub.model         == 'claude-sonnet-4-6'
+    assert sub.billed_in     == 150   # input_tokens + cache_creation
+    assert sub.cache_read_in == 200
+    assert sub.output        == 80
+    assert sub.total_input   == 350   # billed_in + cache_read_in
+    assert sub.last_activity == ('tool_use', 'Bash', {'command': 'pytest'})
+
+
+def test_last_activity_text_after_tool_use(tmp_home: Path) -> None:
+    now = time.time()
+    sdir = _subagents_dir(tmp_home)
+    _write_agent(
+        sdir, 'agent-text',
+        jsonl_lines=[
+            _assistant_line(
+                'm1',
+                output_tokens=10,
+                content=[
+                    {'type': 'tool_use', 'name': 'Edit', 'input': {'file_path': '/x.py', 'old_string': 'a', 'new_string': 'b'}},
+                    {'type': 'text', 'text': 'done'},
+                ],
+            ),
+        ],
+        mtime=now,
+    )
+
+    result = sl.RunningSubagents.from_session(SESSION_ID, PROJECT_DIR)
+    sub = result.subagents[0]
+    assert sub.last_activity == ('text', '', {})
+
+
+def test_last_activity_thinking_only(tmp_home: Path) -> None:
+    now = time.time()
+    sdir = _subagents_dir(tmp_home)
+    _write_agent(
+        sdir, 'agent-think',
+        jsonl_lines=[
+            _assistant_line(
+                'm1',
+                output_tokens=5,
+                content=[{'type': 'thinking', 'thinking': 'considering...'}],
+            ),
+        ],
+        mtime=now,
+    )
+
+    result = sl.RunningSubagents.from_session(SESSION_ID, PROJECT_DIR)
+    sub = result.subagents[0]
+    assert sub.last_activity == ('thinking', '', {})

@@ -52,6 +52,7 @@ class Theme:
     dim_green:    str
     label:        str
     ctx:          str
+    ctx_dim:      str
     white_brt:    str
     arrow:        str
     dirty:        str
@@ -102,6 +103,7 @@ CLAUDE_DARK = Theme(
     dim_green   = fg256(77),
     label       = fg256(244),
     ctx         = fg256(216),
+    ctx_dim     = fg256(248),
     white_brt   = fg256(15),
     arrow       = fg256(46),
     dirty       = fg256(214),
@@ -197,6 +199,7 @@ CLAUDE_LIGHT = Theme(
     dim_green   = fg(60, 130, 70),
     label       = fg256(243),
     ctx         = fg(180, 100, 50),
+    ctx_dim     = fg256(245),
     white_brt   = fg256(232),
     arrow       = fg(0, 135, 0),
     dirty       = fg(180, 110, 20),
@@ -292,6 +295,7 @@ CATPPUCCIN_LATTE = Theme(
     dim_green   = fg( 64, 160,  43),
     label       = fg(140, 143, 161),
     ctx         = fg(254, 100,  11),
+    ctx_dim     = fg(124, 127, 147),
     white_brt   = fg( 76,  79, 105),
     arrow       = fg( 64, 160,  43),
     dirty       = fg(254, 100,  11),
@@ -387,6 +391,7 @@ CATPPUCCIN_MOCHA = Theme(
     dim_green   = fg(166, 227, 161),
     label       = fg(127, 132, 156),
     ctx         = fg(250, 179, 135),
+    ctx_dim     = fg(166, 173, 200),
     white_brt   = fg(205, 214, 244),
     arrow       = fg(166, 227, 161),
     dirty       = fg(250, 179, 135),

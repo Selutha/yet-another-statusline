@@ -126,6 +126,20 @@ GLYPH_PLUGINS = '\uf1e6'      # nf-fa-plug          (plugins label)
 GLYPH_HELPER   = '\uf4cd'     # nf-mdi-star_circle  (5h rate-limit helper)
 GLYPH_TRASH    = '\U000f0a7a' # nf-md-trash_can     (git deleted count)
 GLYPH_RENAMED  = '\U000f1031' # nf-md-file_move     (git renamed count)
+GLYPH_CONTINUATION = '└'    # U+2514 BOX DRAWINGS LIGHT UP AND RIGHT (└)
+GLYPH_REPLYING     = '\U000f0189'  # nf-md-message  (replying state)
+GLYPH_HOURGLASS    = '\uf253'  # nf-fa-hourglass_half (subagent context size)
+
+TOOL_ARG_KEY: dict[str, str] = {
+    'Bash':        'command',
+    'Read':        'file_path',
+    'Edit':        'file_path',
+    'Write':       'file_path',
+    'NotebookEdit':'file_path',
+    'Grep':        'pattern',
+    'Glob':        'pattern',
+    'Task':        'subagent_type',
+}
 
 # Dim factor for the in-flight (currently-open) sparkline bucket.
 LIVE_DIM = 0.5
@@ -828,6 +842,10 @@ class RunningSubagent:
     billed_in: int
     output: int
     first_timestamp: float  # epoch seconds; baseline for live duration
+    model:         str                   = ''
+    cache_read_in: int                   = 0
+    total_input:   int                   = 0
+    last_activity: tuple[str, str, dict] = field(default_factory=lambda: ('', '', {}))
 
 
 @dataclass
@@ -869,13 +887,17 @@ class RunningSubagents:
                 except OSError:
                     continue
 
-                billed_in, output, first_ts = cls._parse_transcript(jsonl)
+                billed_in, cache_read_in, output, first_ts, model, last_activity = cls._parse_transcript(jsonl)
                 subagents.append(RunningSubagent(
                     agent_type      = agent_type,
                     description     = description,
                     billed_in       = billed_in,
                     output          = output,
                     first_timestamp = first_ts,
+                    model           = model,
+                    cache_read_in   = cache_read_in,
+                    total_input     = billed_in + cache_read_in,
+                    last_activity   = last_activity,
                 ))
         except OSError:
             pass
@@ -883,11 +905,14 @@ class RunningSubagents:
         return cls(subagents=subagents)
 
     @staticmethod
-    def _parse_transcript(jsonl: Path) -> tuple[int, int, float]:
+    def _parse_transcript(jsonl: Path) -> tuple[int, int, int, float, str, tuple[str, str, dict]]:
         seen: set[str] = set()
-        billed_in = 0
-        output    = 0
-        first_ts  = 0.0
+        billed_in    = 0
+        cache_read_in = 0
+        output       = 0
+        first_ts     = 0.0
+        model        = ''
+        last_activity: tuple[str, str, dict] = ('', '', {})
         try:
             with jsonl.open('r', errors='ignore') as fh:
                 for ln in fh:
@@ -910,12 +935,27 @@ class RunningSubagents:
                     if not mid or mid in seen:
                         continue
                     seen.add(mid)
+                    if not model:
+                        m = msg.get('model') or ''
+                        if m:
+                            model = m
                     u = msg.get('usage') or {}
-                    billed_in += (u.get('input_tokens', 0) or 0) + (u.get('cache_creation_input_tokens', 0) or 0)
-                    output    += u.get('output_tokens', 0) or 0
+                    billed_in     += (u.get('input_tokens', 0) or 0) + (u.get('cache_creation_input_tokens', 0) or 0)
+                    cache_read_in += u.get('cache_read_input_tokens', 0) or 0
+                    output        += u.get('output_tokens', 0) or 0
+                    content = msg.get('content') or []
+                    if content:
+                        item = content[-1]
+                        kind = item.get('type', '')
+                        if kind == 'tool_use':
+                            last_activity = ('tool_use', item.get('name', ''), item.get('input') or {})
+                        elif kind == 'thinking':
+                            last_activity = ('thinking', '', {})
+                        elif kind == 'text':
+                            last_activity = ('text', '', {})
         except OSError:
             pass
-        return billed_in, output, first_ts
+        return billed_in, cache_read_in, output, first_ts, model, last_activity
 
 
 def _parse_iso_to_epoch(ts: str) -> float:
@@ -1561,6 +1601,7 @@ class Renderer:
         self.DIM_GREEN   = t.dim_green
         self.LABEL       = t.label
         self.CTX         = t.ctx
+        self.CTX_DIM     = t.ctx_dim
         self.BOLDW       = BOLD + t.white_brt
         self.BOLDY       = t.tok_arrow
         self.DIRTY       = t.dirty
@@ -1623,6 +1664,7 @@ class Renderer:
     DIM_GREEN = CLR_GREEN_DIM
     LABEL     = CLR_GREY_DIM
     CTX       = CLR_PEACH
+    CTX_DIM   = CLR_PEACH
     BOLDW     = BOLD + CLR_WHITE_BRT
     BOLDY     = CLR_YELLOW
     DIRTY     = CLR_WARN
@@ -1765,6 +1807,15 @@ class Renderer:
         if pct >= 70:
             return self.warn
         return self.safe
+
+    def risk_zone_color(self, tokens: int) -> str:
+        if tokens <= 50_000:
+            return self.safe
+        if tokens <= 80_000:
+            return self.yellow
+        if tokens <= 150_000:
+            return self.warn
+        return self.alert
 
     def day_cost_colour(self, cost: float) -> str:
         if cost > 50:
@@ -1931,40 +1982,126 @@ class Renderer:
 
     SUBAGENT_TOK_W = 6  # fmt_tok('999.9K') is 6 chars; reserve to avoid jitter
 
+    def subagent_activity(self, last_activity: tuple[str, str, dict]) -> str:
+        kind, name, inp = last_activity
+        if kind == 'tool_use':
+            key = TOOL_ARG_KEY.get(name)
+            if key and key in inp:
+                raw = str(inp[key])
+                if key == 'file_path':
+                    raw = Path(raw).name
+            elif inp:
+                raw = str(next(iter(inp.values())))
+            else:
+                raw = ''
+            if _visible_width(raw) > 36:
+                raw = raw[:36] + '…'  # U+2026 HORIZONTAL ELLIPSIS
+            return f'{GLYPH_TASKS} {name}[{raw}]'
+        if kind == 'thinking':
+            return f'{GLYPH_THINKING} (thinking)'
+        if kind == 'text':
+            return f'{GLYPH_REPLYING} (replying)'
+        return ''
+
     def subagent_row(self, sub: RunningSubagent, width: int) -> str:
-        now    = time.time()
-        dur    = max(0.0, now - sub.first_timestamp) if sub.first_timestamp > 0 else 0.0
-        bin_s  = fmt_tok(sub.billed_in).rjust(self.SUBAGENT_TOK_W)
-        out_s  = fmt_tok(sub.output).rjust(self.SUBAGENT_TOK_W)
-        dur_s  = fmt_dur(dur).rjust(5)
+        now     = time.time()
+        dur     = max(0.0, now - sub.first_timestamp) if sub.first_timestamp > 0 else 0.0
+        dur_s   = fmt_dur(dur).rjust(5)
+        out_s   = fmt_tok(sub.output)
+        tok_s   = fmt_tok(sub.total_input)
 
-        right_text = (
-            f'{self.LABEL}{BOLD}↓{self.R}{self.CTX}{bin_s}{self.R}'
-            f' {self.LABEL}{BOLD}↑{self.R}{self.CTX}{out_s}{self.R}'
-            f'   {self.CTX}{dur_s}{self.R}'
+        short_model = model_key(sub.model)  # 'opus'/'sonnet'/'haiku'/'other'
+        model_clr   = self.model_colour(sub.model)
+        ctx_clr     = self.risk_zone_color(sub.total_input)
+        cost        = TokenAccounting.session_cost(
+            Model(id=sub.model),
+            TranscriptUsage(
+                input_tokens            = sub.billed_in,
+                cache_read_input_tokens = sub.cache_read_in,
+                output_tokens           = sub.output,
+            ),
         )
-        right_w = _visible_width(right_text)
+        cost_s = f'{cost:.2f}'
 
-        step      = rainbow_step()
-        c_marker  = rainbow_at(step, 12)
+        step     = rainbow_step()
+        c_marker = rainbow_at(step, 12)
         type_text = sub.agent_type or '?'
-        desc_text = sub.description or ''
 
-        target_w = width - 4  # leave 1 col gap before the right │, matching sibling rows
-        head_w   = 3 + len(type_text) + 3  # '▶  ' + type + ' · '
-        budget   = max(0, target_w - head_w - 1 - right_w)
-        if len(desc_text) > budget:
-            desc_text = (desc_text[:budget - 1] + '…') if budget > 0 else ''
+        target_w = width - 4  # content width (2 for '│ ' left, 2 for ' │' right)
 
-        left_text = (
-            f'{c_marker}{BOLD}{GLYPH_SUBAGENT_ROW}{self.R}  '
-            f'{self.SKILLS}{type_text}{self.R}'
-            f' {self.LABEL}·{self.R} '
-            f'{self.CTX}{desc_text}{self.R}'
-        )
-        left_w = head_w + len(desc_text)
-        pad_w  = max(1, target_w - left_w - right_w)
-        return f'{left_text}{" " * pad_w}{right_text}'
+        if width > 100:
+            # --- identity line (▶) ---
+            right1 = (
+                f'{model_clr}{short_model}{self.R}'
+                f' {self.LABEL}·{self.R}'
+                f' {self.LABEL}{BOLD}↑{self.R}{self.CTX}{out_s}{self.R}'
+                f' {self.LABEL}·{self.R}'
+                f' {self.CTX}{dur_s}{self.R}'
+            )
+            right1_w = _visible_width(right1)
+
+            head1_w  = 3 + _visible_width(type_text) + 3  # '▶  ' + type + ' · '
+            desc_budget = max(0, target_w - head1_w - 1 - right1_w)
+            desc_text   = sub.description or ''
+            if _visible_width(desc_text) > desc_budget:
+                desc_text = (desc_text[:desc_budget - 1] + '…') if desc_budget > 0 else ''
+
+            left1 = (
+                f'{c_marker}{BOLD}{GLYPH_SUBAGENT_ROW}{self.R}  '
+                f'{self.SKILLS}{type_text}{self.R}'
+                f' {self.LABEL}·{self.R} '
+                f'{self.CTX}{desc_text}{self.R}'
+            )
+            left1_w = head1_w + _visible_width(desc_text)
+            pad1    = max(1, target_w - left1_w - right1_w)
+            line1   = f'{left1}{" " * pad1}{right1}'
+
+            # --- continuation line (└) ---
+            right2 = (
+                f'{ctx_clr}{GLYPH_HOURGLASS} {tok_s}{self.R}'
+                f' {self.LABEL}·{self.R}'
+                f' {self.COST}${cost_s}{self.R}'
+            )
+            right2_w = _visible_width(right2)
+
+            activity   = self.subagent_activity(sub.last_activity)
+            activity_w = _visible_width(activity)
+            left2_w    = 6 + activity_w
+
+            left2 = (
+                f'   {self.CTX_DIM}{GLYPH_CONTINUATION}{self.R}  '
+                f'{self.CTX_DIM}{activity}{self.R}'
+            )
+            pad2  = max(1, target_w - left2_w - right2_w)
+            line2 = f'{left2}{" " * pad2}{right2}'
+
+            return f'{line1}\n{line2}'
+
+        else:
+            # --- narrow single-line collapse ---
+            kind = sub.last_activity[0]
+            tool_verb = sub.last_activity[1] if kind == 'tool_use' else (
+                '(thinking)' if kind == 'thinking' else
+                '(replying)' if kind == 'text' else ''
+            )
+
+            right_n = (
+                f'{ctx_clr}{GLYPH_HOURGLASS} {tok_s}{self.R}'
+                f'  {self.COST}${cost_s}{self.R}'
+                f'  {self.LABEL}{BOLD}↑{self.R}{self.CTX}{out_s}{self.R}'
+                f'  {self.CTX}{dur_s}{self.R}'
+            )
+            right_n_w = _visible_width(right_n)
+
+            left_n = (
+                f'{c_marker}{BOLD}{GLYPH_SUBAGENT_ROW}{self.R}  '
+                f'{self.SKILLS}{type_text}{self.R}'
+                f'  {model_clr}{short_model}{self.R}'
+                f'  {self.CTX}{tool_verb}{self.R}'
+            )
+            left_n_w = _visible_width(left_n)
+            pad_n    = max(1, target_w - left_n_w - right_n_w)
+            return f'{left_n}{" " * pad_n}{right_n}'
 
     def task_row(self, tasks: TaskList, width: int, compact: bool = False) -> str:
         step    = rainbow_step()
@@ -2125,7 +2262,7 @@ class Renderer:
         pct_soft     = total_tokens / SOFT_LIMIT * 100
 
         if total_tokens >= SOFT_LIMIT:
-            a = BOLD + self.alert
+            a = BOLD + self.risk_zone_color(total_tokens)
             secondary = ''
             if ctx.context_window_size > 0:
                 pct_model = total_tokens / ctx.context_window_size * 100
@@ -2137,7 +2274,7 @@ class Renderer:
             bar    = f'{self.gradient_bar(filled, bar_w)}{self.R}{a}{BarChars.EMPTY * empty}{self.R}'
             return f'{a}{self.R} {prefix}{bar}'
 
-        bar_clr = self.fill_colour(pct_soft)
+        bar_clr = self.risk_zone_color(total_tokens)
         secondary = ''
         if ctx.context_window_size > 0:
             pct_model = total_tokens / ctx.context_window_size * 100
@@ -2156,7 +2293,7 @@ class Renderer:
         pct_soft     = total_tokens / SOFT_LIMIT * 100
 
         if total_tokens >= SOFT_LIMIT:
-            a      = BOLD + self.alert
+            a      = BOLD + self.risk_zone_color(total_tokens)
             prefix = f'{a}{pct_soft:.0f}%{self.R} '
             bar_w  = max(4, available - _visible_width(prefix) - 3)
             filled = int(min(fill_ratio, 1.0) * bar_w)
@@ -2164,7 +2301,7 @@ class Renderer:
             bar    = f'{self.gradient_bar(filled, bar_w)}{self.R}{a}{BarChars.EMPTY * empty}{self.R}'
             return f' {prefix}{bar}'
 
-        bar_clr = self.fill_colour(pct_soft)
+        bar_clr = self.risk_zone_color(total_tokens)
         prefix  = f'{bar_clr}{BOLD}{pct_soft:.0f}%{self.R} '
         bar_w   = max(4, available - _visible_width(prefix) - 3)
         filled  = int(fill_ratio * bar_w)
@@ -2301,26 +2438,31 @@ def build_narrow(session: SessionInfo, width: int, r: Renderer) -> LayoutSpec:
     if pill_pct:
         pill = Pill(start=width - right_w + 1, end=width, anchor=pill_anchor, shift=pill_shift, pct=pill_pct)
 
+    subagents = RunningSubagents.from_session(session.session_id, session.workspace.project_dir)
     spec = LayoutSpec(width=width, fill=fill, session_id=session.session_id)
     if pill_pct:
-        spec.rows = [
+        rows: list[RowSpec] = [
             RowSpec('top_border', pill=pill),
             RowSpec('content', content=rate_text, right_pill=right_text),
             RowSpec('separator_dim', pill=pill),
-            RowSpec('content', content=line_context),
-            RowSpec('bottom_border'),
         ]
     else:
         rate_w = _visible_width(rate_text)
         pad    = max(1, (width - 4) - rate_w - right_w)
         full   = f'{rate_text}{" " * pad}{right_text}'
-        spec.rows = [
+        rows = [
             RowSpec('top_border'),
             RowSpec('content', content=full),
             RowSpec('separator_dim'),
-            RowSpec('content', content=line_context),
-            RowSpec('bottom_border'),
         ]
+    if subagents.subagents:
+        for sub in subagents.subagents:
+            for line in r.subagent_row(sub, width).split('\n'):
+                rows.append(RowSpec('content', content=line))
+        rows.append(RowSpec('separator_dim'))
+    rows.append(RowSpec('content', content=line_context))
+    rows.append(RowSpec('bottom_border'))
+    spec.rows = rows
     return spec
 
 
@@ -2366,10 +2508,16 @@ def build_medium(session: SessionInfo, width: int, r: Renderer) -> LayoutSpec:
         top_row     = RowSpec('top_border', downs=(path_div_col,))
         content_row = RowSpec('content', content=full)
         sep_row     = RowSpec('separator_dim', ups=(path_div_col,))
-    tasks = TaskList.from_session(session.transcript_path)
+    tasks     = TaskList.from_session(session.transcript_path)
+    subagents = RunningSubagents.from_session(session.session_id, session.workspace.project_dir)
     rows: list[RowSpec] = [top_row, content_row, sep_row]
     if tasks.is_visible():
         rows.append(RowSpec('content', content=r.task_row(tasks, width, compact=True)))
+        rows.append(RowSpec('separator_dim'))
+    if subagents.subagents:
+        for sub in subagents.subagents:
+            for line in r.subagent_row(sub, width).split('\n'):
+                rows.append(RowSpec('content', content=line))
         rows.append(RowSpec('separator_dim'))
     rows.append(RowSpec('content', content=line_context))
     rows.append(RowSpec('bottom_border'))
@@ -2464,7 +2612,8 @@ def build_wide(session: SessionInfo, width: int, r: Renderer) -> LayoutSpec:
 
     if subagents.subagents:
         for sub in subagents.subagents:
-            rows.append(RowSpec('content', content=r.subagent_row(sub, width)))
+            for line in r.subagent_row(sub, width).split('\n'):
+                rows.append(RowSpec('content', content=line))
         rows.append(RowSpec('separator_dim'))
 
     rows.append(RowSpec('content', content=line_context))
