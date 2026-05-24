@@ -20,6 +20,15 @@ A dummy session to demonstrate the layout:
 
 <img width="1723" height="688" alt="image" src="https://github.com/user-attachments/assets/03c65cb2-f533-4194-94df-416d9b7e820e" />
 
+## Widths
+
+The statusline also renders differently according to available width
+
+| mode | width | screenshot |
+|------|-------|------------|
+| "medium" | <=80 pixels | <img width="839" height="122" alt="image" src="https://github.com/user-attachments/assets/56519acc-a65c-446a-a938-5a14f093c817" /> |
+| "narrow" | <=55 pixels | <img width="537" height="120" alt="image" src="https://github.com/user-attachments/assets/7254cbb7-ea37-4f41-8adc-506cf6b48033" /> |
+
 ---
 
 ## Commands
