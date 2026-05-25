@@ -38,7 +38,6 @@ exclude = [
     ".git",
     ".ruff_cache",
     ".venv",
-    "claude/",
     "openspec/",
 ]
 
