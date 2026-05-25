@@ -1,6 +1,6 @@
 # YAS! (Yet Another Statusline)
 
-<img width="1211" height="237" alt="image" src="https://github.com/user-attachments/assets/8e23b3ca-8d8f-4401-b564-e1b065521fd4" />
+<img width="1685" height="320" alt="image" src="https://github.com/user-attachments/assets/516cb692-3318-4552-b813-e3e34ca96858" />
 
 _Most common form is displaying these stats, which include the loaded plugins & skills. Extra sections appear as needed_
 
@@ -20,7 +20,7 @@ A dummy session to demonstrate the layout:
 
 ## Layout Reference
 
-<img width="1623" height="973" alt="image" src="https://github.com/user-attachments/assets/870dd289-6abb-4c80-8dca-f7e283a4c2c1" />
+<img width="1835" height="884" alt="image" src="https://github.com/user-attachments/assets/4a410cd6-5afa-401d-b3f0-5b8726187a03" />
 
 ## Widths
 
