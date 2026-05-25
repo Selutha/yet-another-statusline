@@ -202,10 +202,11 @@ class TestModelRightSectionWideBurndown:
         rate = self._make_rate(60.0, 150, 60.0, 5040)
         helper, _right, _w = self._r.model_right_section('Sonnet 4.6', '', rate)
         stripped = strip_ansi(helper)
-        assert sl.GLYPH_FAST in stripped  # at least one over-burn trend
+        assert sl.GLYPH_BURN_FAST in stripped  # at least one over-burn trend
 
     def test_wide_seven_day_idle_suppresses_block(self) -> None:
         import time
+
         now = time.time()
         rate = RateLimits(
             five_hour=RateBucket(used_percentage=60.0, resets_at=int(now + 150 * 60)),
@@ -226,7 +227,7 @@ class TestModelRightSectionWideBurndown:
         helper, _right, _w = self._r.model_right_section('Sonnet 4.6', '', rate)
         stripped = strip_ansi(helper)
         assert '60.0%' in stripped
-        assert sl.GLYPH_FAST not in stripped
+        assert sl.GLYPH_BURN_FAST not in stripped
         assert '▼' not in stripped
 
     def test_wide_helper_text_width_is_positive(self) -> None:
@@ -277,7 +278,7 @@ class TestNarrowLayoutNoBurndown:
 
     def test_narrow_no_up_arrow(self) -> None:
         out, _w = self._r.model_section_compact('Sonnet 4.6', self._narrow_rate(), max_width=55)
-        assert sl.GLYPH_FAST not in strip_ansi(out)
+        assert sl.GLYPH_BURN_FAST not in strip_ansi(out)
 
     def test_narrow_no_down_arrow(self) -> None:
         out, _w = self._r.model_section_compact('Sonnet 4.6', self._narrow_rate(), max_width=55)

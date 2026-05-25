@@ -34,55 +34,56 @@ class TestBurndownTrend:
         resets_at = int(_NOW + 298 * 60)
         assert self._r.burndown_trend(10.0, resets_at, self._W, self._WU, now=_NOW) == ''
 
-    def test_on_pace_dot_positive_boundary(self) -> None:
-        # delta = +0.3 → dot
-        # elapsed = 150 → ideal = 50%; used = 50.3% → delta = +0.3
-        out = self._trend(50.3, 150)
-        assert strip_ansi(out) == '·'
+    # --- on-pace boundary: small deltas still render a glyph (no neutral dot) ---
+    def test_on_pace_small_over_burn(self) -> None:
+        # elapsed = 150 -> ideal = 50%; used = 50.3% -> delta = +0.3 -> fast glyph
+        assert strip_ansi(self._trend(50.3, 150)) == f'{sl.GLYPH_BURN_FAST} +00.30%'
 
-    def test_on_pace_dot_negative_boundary(self) -> None:
-        # delta = -0.5 → dot
-        # elapsed = 150 → ideal = 50%; used = 49.5% → delta = -0.5
-        out = self._trend(49.5, 150)
-        assert strip_ansi(out) == '·'
+    def test_on_pace_small_under_burn(self) -> None:
+        # used = 49.5% -> delta = -0.5 -> slow glyph
+        assert strip_ansi(self._trend(49.5, 150)) == f'{sl.GLYPH_BURN_SLOW} -00.50%'
 
-    # Over-burn direction ()
-    def test_over_burn_safe_bucket(self) -> None:
-        # delta = +3.0 → safe colour
-        out = self._trend(53.0, 150)
-        assert strip_ansi(out) == f'{sl.GLYPH_FAST} 3.0%'
-        assert sl.CLR_GREEN_OK in out  # self.safe = CLR_GREEN_OK
+    def test_exactly_on_pace_uses_slow_glyph(self) -> None:
+        # delta == 0 is not > 0, so the slow glyph; sign is '+' (only delta < 0 gets '-')
+        assert strip_ansi(self._trend(50.0, 150)) == f'{sl.GLYPH_BURN_SLOW} +00.00%'
 
-    def test_over_burn_warn_bucket(self) -> None:
-        # delta = +8.0 → warn colour
-        out = self._trend(58.0, 150)
-        assert strip_ansi(out) == f'{sl.GLYPH_FAST} 8.0%'
-        assert sl.CLR_WARN in out
+    # --- over-burn (delta > 0): fast glyph, '+' sign, zero-padded 05.2f ---
+    def test_over_burn_small(self) -> None:
+        # delta = +3.0
+        assert strip_ansi(self._trend(53.0, 150)) == f'{sl.GLYPH_BURN_FAST} +03.00%'
 
-    def test_over_burn_alert_bucket(self) -> None:
-        # delta = +20.0 → alert colour
-        out = self._trend(70.0, 150)
-        assert strip_ansi(out) == f'{sl.GLYPH_FAST} 20.0%'
-        assert sl.CLR_ALERT in out
+    def test_over_burn_mid(self) -> None:
+        # delta = +8.0
+        assert strip_ansi(self._trend(58.0, 150)) == f'{sl.GLYPH_BURN_FAST} +08.00%'
 
-    # Under-burn direction (▼)
-    def test_under_burn_dim_green_bucket(self) -> None:
-        # delta = -3.0 → dim green
-        out = self._trend(47.0, 150)
-        assert strip_ansi(out) == '▼ 3.0%'
-        assert sl.CLR_GREEN_DIM in out
+    def test_over_burn_large(self) -> None:
+        # delta = +20.0
+        assert strip_ansi(self._trend(70.0, 150)) == f'{sl.GLYPH_BURN_FAST} +20.00%'
 
-    def test_under_burn_mid_green_bucket(self) -> None:
-        # delta = -8.0 → mid green (self.safe = CLR_GREEN_OK)
-        out = self._trend(42.0, 150)
-        assert strip_ansi(out) == '▼ 8.0%'
-        assert sl.CLR_GREEN_OK in out
+    # --- under-burn (delta < 0): slow glyph, '-' sign ---
+    def test_under_burn_small(self) -> None:
+        # delta = -3.0
+        assert strip_ansi(self._trend(47.0, 150)) == f'{sl.GLYPH_BURN_SLOW} -03.00%'
 
-    def test_under_burn_bright_green_bucket(self) -> None:
-        # delta = -20.0 → bright green (self.ARROW = CLR_GREEN_BRT)
-        out = self._trend(30.0, 150)
-        assert strip_ansi(out) == '▼ 20.0%'
-        assert sl.CLR_GREEN_BRT in out
+    def test_under_burn_mid(self) -> None:
+        # delta = -8.0
+        assert strip_ansi(self._trend(42.0, 150)) == f'{sl.GLYPH_BURN_SLOW} -08.00%'
+
+    def test_under_burn_large(self) -> None:
+        # delta = -20.0
+        assert strip_ansi(self._trend(30.0, 150)) == f'{sl.GLYPH_BURN_SLOW} -20.00%'
+
+    # --- colour: continuous gradient mapped from delta, not palette buckets ---
+    def test_colour_follows_gradient_mapping(self) -> None:
+        # colour is gradient_color(0.5 + delta/50); recompute with the same delta
+        delta = 8.0
+        out = self._trend(50.0 + delta, 150)
+        assert self._r.gradient.gradient_color(0.5 + delta / 50.0) in out
+
+    def test_under_burn_greener_than_over_burn(self) -> None:
+        under = self._r.gradient.gradient_rgb(0.5 + (-20.0) / 50.0)
+        over = self._r.gradient.gradient_rgb(0.5 + 20.0 / 50.0)
+        assert under[1] > over[1]  # under-burn keeps more green channel
 
 
 class TestHelperBurndownIntegration:
@@ -110,7 +111,7 @@ class TestHelperBurndownIntegration:
         r = Renderer()
         out = r.helper(RateBucket(used_percentage=60.0, resets_at=resets_at))
         stripped = strip_ansi(out)
-        assert sl.GLYPH_FAST not in stripped
+        assert sl.GLYPH_BURN_FAST not in stripped
         assert '▼' not in stripped
         assert 'T-' in stripped
 
@@ -122,9 +123,9 @@ class TestHelperBurndownIntegration:
         out = r.helper(RateBucket(used_percentage=60.0, resets_at=resets_at))
         stripped = strip_ansi(out)
         assert '60.0%' in stripped
-        assert sl.GLYPH_FAST in stripped
+        assert sl.GLYPH_BURN_FAST in stripped
         t_pos = stripped.index('T-')
-        arrow_pos = stripped.index(sl.GLYPH_FAST)
+        arrow_pos = stripped.index(sl.GLYPH_BURN_FAST)
         assert arrow_pos < t_pos
 
     def test_expired_window_infinity_unchanged(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -143,7 +144,7 @@ class TestHelperBurndownIntegration:
         r = Renderer()
         out = r.helper(RateBucket(used_percentage=60.0, resets_at=resets_at))
         stripped = strip_ansi(out)
-        assert sl.GLYPH_FAST in stripped or '▼' in stripped or sl.GLYPH_NEUTRAL in stripped
+        assert sl.GLYPH_BURN_FAST in stripped or '▼' in stripped or sl.GLYPH_BURN_SLOW in stripped
 
 
 def test_helper_no_usage_no_reset() -> None:

@@ -160,7 +160,8 @@ ICON_COST     = '\uefc8'      # nf-md currency-usd  (cost row)
 ICON_TOK_RATE = '\U000f18a7'  # nf-md gauge         (t/m rate label)
 GLYPH_MODEL    = '\U000f08b9' # nf-md-monitor-dashboard
 GLYPH_THINKING = '\U000f1a53' # nf-md-brain
-GLYPH_FAST     = '\uef76'     # nf-cod-zap (shown when fast_mode is on)
+GLYPH_BURN_FAST = '\uef76'  # nf-cod-zap (shown when the burn rate is too fast)
+GLYPH_BURN_SLOW = '\uf490'  # nf-oct-flame (shown when the burn rate is _not_ too fast)
 GLYPH_FOLDER   = '\uef85'     # nf-custom folder    (path row)
 GLYPH_SUBAGENT = '\uf135'     # nf-fa-tasks         (subagent list)
 GLYPH_SUBAGENT_ROW = '\u25b6'  # \u25b6 U+25B6           (per-row Running Subagent marker)
@@ -173,7 +174,6 @@ GLYPH_RENAMED  = '\U000f1031' # nf-md-file_move     (git renamed count)
 GLYPH_CONTINUATION = '└'    # U+2514 BOX DRAWINGS LIGHT UP AND RIGHT (└)
 GLYPH_REPLYING     = '\U000f0189'  # nf-md-message  (replying state)
 GLYPH_HOURGLASS    = '\uf253'  # nf-fa-hourglass_half (subagent context size)
-GLYPH_CANDLE       = '\U000f05e2' # nf-md-candle        (under-burn rate indicator)
 GLYPH_PIE          = '\uf200'  # nf-fa-pie_chart     (subagent session share)
 
 TOOL_ARG_KEY: dict[str, str] = {
@@ -1952,7 +1952,7 @@ class Renderer:
         c_helper  = rainbow_at(step, 9)
         model_clr = self.model_colour(model_name)
         pct       = self._model_bg_pct(effort_level)
-        glyph     = GLYPH_FAST if fast_mode else GLYPH_THINKING
+        glyph     = GLYPH_BURN_FAST if fast_mode else GLYPH_THINKING
 
         if pct:
             anchor, shift = self._model_anchor_pair(model_name)
@@ -2482,7 +2482,7 @@ class Renderer:
         # t=0.5 (yellow-orange midpoint) at neutral, t=1 (red/purple) at max over-burn.
         t = max(0.0, min(1.0, 0.5 + delta / 50.0))
         colour = self.gradient.gradient_color(t)
-        glyph = GLYPH_FAST if delta > 0 else GLYPH_CANDLE
+        glyph = GLYPH_BURN_FAST if delta > 0 else GLYPH_BURN_SLOW # colour modulation carries over/under-burn direction
         sign  = '-' if delta < 0 else '+'
         return f'{colour}{glyph} {sign}{abs_delta:05.2f}%{self.R}'
 
