@@ -89,7 +89,15 @@ _Avoid_: "task TTL" (suggests the tasks themselves expire — they don't, only t
 The rolling 5-hour quota Anthropic publishes in `rate_limits.five_hour`. Shown in the model row's helper suffix as `<pct>% T-<time-to-reset>`.
 
 **Seven-Day Limit**:
-The weekly quota in `rate_limits.seven_day`. Currently parsed but not rendered.
+The weekly quota in `rate_limits.seven_day`. Rendered in the wide layout model row as `| <pct>%` (with optional **Burndown Trend** suffix).
+
+**Burndown Trend**:
+A velocity indicator rendered alongside each active rate-limit bucket's `<pct>%`. Computed as `delta = used_percentage - ideal_pct`, where `ideal_pct = (elapsed_minutes / window_minutes) * 100` and `elapsed_minutes` is derived from `resets_at` and the window constant. Formatted as:
+- `▲<abs>%` when `delta > +0.5` (over-burn, red ramp: safe → warn → alert at 5%/15%)
+- `▼<abs>%` when `delta < -0.5` (under-burn, green ramp: dim → mid → bright at 5%/15%)
+- `·` when `|delta| ≤ 0.5` (on-pace)
+
+Suppressed when: `resets_at == 0` (no window), window expired, or within warmup period (first 5 min of 5h window, first 30 min of 7d window). Per-layout policy: wide shows trend for both 5h and 7d; medium shows 5h trend only; narrow shows no trend.
 
 ## Relationships
 

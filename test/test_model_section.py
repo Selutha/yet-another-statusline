@@ -10,6 +10,8 @@ Model = sl.Model
 Thinking = sl.Thinking
 Effort = sl.Effort
 
+_NOW = 1_000_000_000.0
+
 
 def test_model_right_section_no_seven_day_suffix() -> None:
     r = Renderer()
@@ -180,3 +182,103 @@ class TestNarrowPillOnRight:
         lines = sl.render_layout(spec, r)
         sep = strip_ansi(lines[2])
         assert sep.endswith(sl.PILL_BR), 'separator must end with PILL_BR when pill is on right'
+
+
+class TestModelRightSectionWideBurndown:
+    """Tests for burndown trend in model_right_section() (wide layout)."""
+
+    _r = Renderer()
+
+    def _make_rate(self, five_pct: float, five_left_min: float, seven_pct: float, seven_left_min: float) -> RateLimits:
+        import time
+        now = time.time()
+        return RateLimits(
+            five_hour=RateBucket(used_percentage=five_pct, resets_at=int(now + five_left_min * 60)),
+            seven_day=RateBucket(used_percentage=seven_pct, resets_at=int(now + seven_left_min * 60)),
+        )
+
+    def test_wide_both_buckets_active_show_trends(self) -> None:
+        # 5h: 150 min elapsed, 60% → over-burn; 7d: mid-window 5040 min elapsed, 60% → over-burn
+        rate = self._make_rate(60.0, 150, 60.0, 5040)
+        helper, _right, _w = self._r.model_right_section('Sonnet 4.6', '', rate)
+        stripped = strip_ansi(helper)
+        assert sl.GLYPH_FAST in stripped  # at least one over-burn trend
+
+    def test_wide_seven_day_idle_suppresses_block(self) -> None:
+        import time
+        now = time.time()
+        rate = RateLimits(
+            five_hour=RateBucket(used_percentage=60.0, resets_at=int(now + 150 * 60)),
+            seven_day=RateBucket(used_percentage=0, resets_at=0),
+        )
+        helper, _right, _w = self._r.model_right_section('Sonnet 4.6', '', rate)
+        stripped = strip_ansi(helper)
+        assert '|' not in stripped  # entire 7d block suppressed
+
+    def test_wide_five_hour_warmup_no_5h_trend(self) -> None:
+        import time
+        now = time.time()
+        # 5h bucket in warmup (2 min elapsed)
+        rate = RateLimits(
+            five_hour=RateBucket(used_percentage=60.0, resets_at=int(now + 298 * 60)),
+            seven_day=RateBucket(used_percentage=0, resets_at=0),
+        )
+        helper, _right, _w = self._r.model_right_section('Sonnet 4.6', '', rate)
+        stripped = strip_ansi(helper)
+        assert '60.0%' in stripped
+        assert sl.GLYPH_FAST not in stripped
+        assert '▼' not in stripped
+
+    def test_wide_helper_text_width_is_positive(self) -> None:
+        rate = self._make_rate(60.0, 150, 60.0, 5040)
+        helper, _right, right_w = self._r.model_right_section('Sonnet 4.6', '', rate)
+        assert _visible_width(helper) > 0
+        assert right_w == _visible_width(_right)
+
+
+class TestModelRightSectionCompactBurndown:
+    """Tests for burndown trend in model_right_section_compact() (medium layout)."""
+
+    _r = Renderer()
+
+    def test_compact_no_window_no_trend(self) -> None:
+        rate = RateLimits(five_hour=RateBucket(used_percentage=60.0, resets_at=0))
+        rate_text, _right, _w = self._r.model_right_section_compact('Sonnet 4.6', rate, max_right_width=40)
+        stripped = strip_ansi(rate_text)
+        assert sl.GLYPH_FAST not in stripped
+        assert '▼' not in stripped
+        assert '·' not in stripped
+
+    def test_compact_no_seven_day_trend(self) -> None:
+        import time
+        now = time.time()
+        rate = RateLimits(
+            five_hour=RateBucket(used_percentage=60.0, resets_at=int(now + 150 * 60)),
+            seven_day=RateBucket(used_percentage=60.0, resets_at=int(now + 5040 * 60)),
+        )
+        rate_text, _right, _w = self._r.model_right_section_compact('Sonnet 4.6', rate, max_right_width=40)
+        stripped = strip_ansi(rate_text)
+        # 7d bucket data is NOT used in compact — only 5h trend may appear
+        assert '60.0%' in stripped  # 5h pct present
+
+
+class TestNarrowLayoutNoBurndown:
+    """Regression: narrow layout must never show  or ▼ regardless of bucket state."""
+
+    _r = Renderer()
+
+    def _narrow_rate(self) -> RateLimits:
+        import time
+        now = time.time()
+        return RateLimits(
+            five_hour=RateBucket(used_percentage=90.0, resets_at=int(now + 150 * 60)),
+            seven_day=RateBucket(used_percentage=90.0, resets_at=int(now + 5040 * 60)),
+        )
+
+    def test_narrow_no_up_arrow(self) -> None:
+        out, _w = self._r.model_section_compact('Sonnet 4.6', self._narrow_rate(), max_width=55)
+        assert sl.GLYPH_FAST not in strip_ansi(out)
+
+    def test_narrow_no_down_arrow(self) -> None:
+        out, _w = self._r.model_section_compact('Sonnet 4.6', self._narrow_rate(), max_width=55)
+        assert '▼' not in strip_ansi(out)

@@ -40,11 +40,36 @@ class BarChars:
 HOME       = Path(os.path.expanduser('~'))
 CLAUDE_DIR = Path(os.environ.get('CLAUDE_CONFIG_DIR', str(HOME / '.claude')))
 MIN_WIDTH    = 40
-MAX_WIDTH    = 120
+MAX_WIDTH    = 140
 NARROW_WIDTH = 55
 MEDIUM_WIDTH = 80
 SOFT_LIMIT = 150_000
 _ANSI_RE   = re.compile(r'\x1b\[[0-9;]*m')
+
+FIVE_HOUR_MINUTES        = 300
+SEVEN_DAY_MINUTES        = 10080
+FIVE_HOUR_WARMUP_MINUTES = 5
+SEVEN_DAY_WARMUP_MINUTES = 30
+
+
+def burndown_delta(
+    used_pct: float,
+    resets_at: int,
+    window_minutes: int,
+    warmup_minutes: int,
+    now: float | None = None,
+) -> float | None:
+    if not resets_at:
+        return None
+    t = now if now is not None else time.time()
+    if t >= resets_at:
+        return None
+    window_start_ts = resets_at - window_minutes * 60
+    elapsed_minutes = (t - window_start_ts) / 60
+    if elapsed_minutes < warmup_minutes:
+        return None
+    ideal_pct = (elapsed_minutes / window_minutes) * 100
+    return used_pct - ideal_pct
 
 
 def terminal_width() -> int:
@@ -1938,7 +1963,14 @@ class Renderer:
         seven_day = rate_limits.seven_day
         if seven_day.used_percentage != 0 or seven_day.resets_at != 0:
             seven_clr = self.fill_colour(float(seven_day.used_percentage or 0))
-            helper_text += f' {self.LABEL}| {seven_clr}{seven_day.used_percentage}%{self.R}'
+            seven_trend = self.burndown_trend(
+                float(seven_day.used_percentage or 0),
+                seven_day.resets_at,
+                SEVEN_DAY_MINUTES,
+                SEVEN_DAY_WARMUP_MINUTES,
+            )
+            seven_trend_part = f' {seven_trend}' if seven_trend else ''
+            helper_text += f' {self.LABEL}| {seven_clr}{seven_day.used_percentage}%{self.R}{seven_trend_part}'
 
         return helper_text, right_text, right_w
 
@@ -1954,11 +1986,18 @@ class Renderer:
                 resets_at = datetime.fromtimestamp(rate_limits.five_hour.resets_at).astimezone()
                 delta = resets_at - datetime.now().astimezone().replace(microsecond=0)
                 if delta.total_seconds() > 0:
+                    trend = self.burndown_trend(
+                        float(pct),
+                        rate_limits.five_hour.resets_at,
+                        FIVE_HOUR_MINUTES,
+                        FIVE_HOUR_WARMUP_MINUTES,
+                    )
+                    trend_part = f' {trend}' if trend else ''
                     total_s = int(delta.total_seconds())
                     h, rem  = divmod(total_s, 3600)
                     m       = rem // 60
                     time_str = f'{h}h{m}m' if h else f'{m}m'
-                    rate_text = f'{rate_text} {self.COMMIT}{time_str}{self.R}'
+                    rate_text = f'{rate_text}{trend_part} {self.COMMIT}{time_str}{self.R}'
         except Exception:
             pass
 
@@ -2396,6 +2435,32 @@ class Renderer:
             f' {self.LABEL}{done}/{total}{self.R} {BOLD}{pct:>3d}%{RESET}'
         )
 
+    def burndown_trend(self, used_pct: float, resets_at: int, window_minutes: int, warmup_minutes: int, now: float | None = None) -> str:
+        delta = burndown_delta(used_pct, resets_at, window_minutes, warmup_minutes, now=now)
+        if delta is None:
+            return ''
+        abs_delta = abs(delta)
+        if abs_delta <= 0.5:
+            return f'{self.LABEL}·{self.R}'
+        if delta > 0:
+            # over-burn: safe → warn → alert
+            if abs_delta < 5:
+                colour = self.safe
+            elif abs_delta < 15:
+                colour = self.warn
+            else:
+                colour = self.alert
+            return f'{colour}{GLYPH_FAST} {abs_delta:.1f}%{self.R}'
+        else:
+            # under-burn: dim green → mid green → bright green
+            if abs_delta < 5:
+                colour = self.DIM_GREEN
+            elif abs_delta < 15:
+                colour = self.safe
+            else:
+                colour = self.ARROW
+            return f'{colour}▼ {abs_delta:.1f}%{self.R}'
+
     def helper(self, five_hour: RateBucket) -> str:
         pct_clr = self.fill_colour(float(five_hour.used_percentage or 0))
         try:
@@ -2409,7 +2474,14 @@ class Renderer:
                 if not five_hour.used_percentage:
                     return '∞'
                 return f'{pct_clr}{five_hour.used_percentage}%{self.R} {self.COMMIT}∞'
-            return f'{pct_clr}{five_hour.used_percentage}%{self.R} {self.COMMIT}T-{delta}'
+            trend = self.burndown_trend(
+                float(five_hour.used_percentage or 0),
+                five_hour.resets_at,
+                FIVE_HOUR_MINUTES,
+                FIVE_HOUR_WARMUP_MINUTES,
+            )
+            trend_part = f' {trend}' if trend else ''
+            return f'{pct_clr}{five_hour.used_percentage}%{self.R}{trend_part} {self.COMMIT}T-{delta}'
         except Exception as e:
             return f'{e.__class__.__name__}, {str(e)}'
 
