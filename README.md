@@ -4,13 +4,22 @@
 
 _Most common form is displaying these stats, which include the loaded plugins & skills. Extra sections appear as needed_
 
-To install (note: currently requires a ["Nerd font"](https://www.nerdfonts.com/font-downloads) for the icons):
+To install (note: requires a ["Nerd font"](https://www.nerdfonts.com/font-downloads) for the icons):
 
+**Via Claude Code plugin (recommended):**
 ```bash
+claude plugin install Borda/yet-another-statusline
+/yas:init
+```
+
+**Via git clone:**
+```bash
+git clone https://github.com/Borda/yet-another-statusline
+cd yet-another-statusline
 make install
 ```
 
-This symlinks the files into your `~/.claude/` user dir, allowing you to easily update them via a `git pull`
+The plugin method fetches and caches the repo automatically. `/yas:init` wires the `statusLine.command` into `~/.claude/settings.json` — re-run after each upgrade to update the versioned path.
 
 ## Demo
 

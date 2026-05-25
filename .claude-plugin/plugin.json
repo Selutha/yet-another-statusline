@@ -1,0 +1,18 @@
+{
+  "author": {
+    "name": "Borda",
+    "url": "https://github.com/Borda"
+  },
+  "description": "Yet Another Statusline — Claude Code statusline showing tokens, context, model, subagents, burn rate, and plugins at a glance",
+  "keywords": [
+    "statusline",
+    "tokens",
+    "context",
+    "subagents",
+    "burndown"
+  ],
+  "license": "MIT",
+  "name": "yas",
+  "repository": "https://github.com/Borda/yet-another-statusline",
+  "version": "0.1.0"
+}
