@@ -1,10 +1,10 @@
 [project]
-name = "claude-code-config"
-version = "0.1.0"
-description = "My Claude Code config"
+name = "yet-another-statusline"
+version = "0.2.0"
+description = "A Claude Code statusline that monitors as much as possible"
 readme = "README.md"
 
-requires-python = ">=3.14"
+requires-python = ">=3.12"
 
 dependencies = []
 
