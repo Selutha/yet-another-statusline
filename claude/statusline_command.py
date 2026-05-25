@@ -1394,9 +1394,10 @@ class GradientEngine:
         denom = max(1, bar_w - 1)
         parts = []
         for i in range(filled):
-            parts.append(f'{self.gradient_color(i / denom)}{BarChars.FILLED}')
+            r, g, b = self.gradient_rgb(i / denom)
+            parts.append(f'\033[48;2;{r};{g};{b}m ')
         if filled <= bar_w:
-            parts.append(f'{self.gradient_color(filled / denom)}{BarChars.MID}')
+            parts.append(f'\033[49m{self.gradient_color(filled / denom)}{BarChars.MID}')
         return ''.join(parts)
 
     def _spark_flat(self, idx: int) -> tuple[str, str]:
