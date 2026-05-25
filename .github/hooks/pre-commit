@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+fpaths=$(git diff --name-only --cached --diff-filter=ACM | grep '.py' | tr '\n' ' ') || exit 0
+
+RUFF_STATUS=0
+MYPY_STATUS=0
+TEST_STATUS=0
+
+echo -e "\n\e[1;97mRunning pre-commit checks on staged Python files:\e[0m\n$fpaths\n"
+
+echo -e "\e[1;93m> ruff check\e[0m"
+ruff check $fpaths || RUFF_STATUS=$?
+
+echo -e "\n\e[1;93m> mypy\e[0m"
+mypy $fpaths || MYPY_STATUS=$?
+
+echo -e "\n\e[1;93m> pytest\e[0m"
+pytest test || TEST_STATUS=$?
+
+[ $RUFF_STATUS -eq 0 ] && [ $MYPY_STATUS -eq 0 ] && [ $TEST_STATUS -eq 0 ] || exit 1
