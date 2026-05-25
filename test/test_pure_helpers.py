@@ -17,14 +17,26 @@ class TestFmtTok:
     def test_five_digit_rounds_to_one_decimal_k(self) -> None:
         assert sl.fmt_tok(12_345) == '12.3K'
 
-    def test_just_below_million_stays_in_k(self) -> None:
-        assert sl.fmt_tok(999_999) == '1000.0K'
+    def test_just_below_million_promotes_to_m(self) -> None:
+        # 999_999/1e3 rounds to 1000.0K (7 chars); promote to M so it stays <= 6.
+        assert sl.fmt_tok(999_999) == '1.0M'
 
     def test_million_displays_as_m(self) -> None:
         assert sl.fmt_tok(1_000_000) == '1.0M'
 
     def test_multi_million_displays_as_m(self) -> None:
         assert sl.fmt_tok(2_500_000) == '2.5M'
+
+    def test_just_below_billion_promotes_to_b(self) -> None:
+        # Avoids "1000.0M" (7 chars) at the M->B boundary.
+        assert sl.fmt_tok(999_999_999) == '1.0B'
+
+    def test_multi_billion_displays_as_b(self) -> None:
+        assert sl.fmt_tok(4_660_500_000) == '4.7B'
+
+    def test_never_exceeds_six_chars(self) -> None:
+        for n in (0, 999, 999_999, 1_000_000, 999_999_999, 4_660_500_000, 99_999_999_999):
+            assert len(sl.fmt_tok(n)) <= 6, (n, sl.fmt_tok(n))
 
 
 class TestIsWide:

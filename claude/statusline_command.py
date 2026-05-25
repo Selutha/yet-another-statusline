@@ -1189,7 +1189,14 @@ def sparkline_width(terminal_width: int) -> int:
 
 
 def fmt_tok(n: int) -> str:
-    if n >= 1_000_000:
+    # Promote at the rounding boundary (>= 999.95 rounds to 1000.0 at .1f) so the
+    # result never exceeds 6 visible chars ("999.9B") and stays within the token
+    # column budget (IN_W/CACHE_W/OUT_W = 6). Without the billions tier, a
+    # multi-billion day total renders as "4660.5M" (7 chars) and pushes that
+    # row's dividers one cell out of alignment.
+    if n >= 999_950_000:
+        return f'{n/1_000_000_000:.1f}B'
+    if n >= 999_950:
         return f'{n/1_000_000:.1f}M'
     if n >= 1000:
         return f'{n/1000:.1f}K'
