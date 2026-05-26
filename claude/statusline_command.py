@@ -40,7 +40,8 @@ class BarChars:
 HOME       = Path(os.path.expanduser('~'))
 CLAUDE_DIR = Path(os.environ.get('CLAUDE_CONFIG_DIR', str(HOME / '.claude')))
 MIN_WIDTH    = 40
-MAX_WIDTH    = 140
+DEFAULT_MAX_WIDTH = 140
+MAX_WIDTH    = int(os.environ.get('YAS_MAX_WIDTH') or DEFAULT_MAX_WIDTH)
 NARROW_WIDTH = 55
 MEDIUM_WIDTH = 80
 SOFT_LIMIT = 150_000
@@ -2858,7 +2859,10 @@ def main() -> None:
     raw_tw = terminal_width()
     if raw_tw < MIN_WIDTH:
         return
-    width = max(MIN_WIDTH, min(MAX_WIDTH, raw_tw - 6))
+    if os.environ.get('YAS_FULL_WIDTH'):
+        width = max(MIN_WIDTH, raw_tw-6)
+    else:
+        width = max(MIN_WIDTH, min(MAX_WIDTH, raw_tw - 6))
 
     sys.stdout.write(render(info, width, bg_shift=bg_shift, theme=theme))
 
