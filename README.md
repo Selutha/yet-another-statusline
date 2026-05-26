@@ -4,64 +4,18 @@
 
 _Most common form is displaying these stats, which include the loaded plugins & skills. Extra sections appear as needed_
 
-## Requirements
+## Install/Update
 
-- Python 3.10+
-- [Nerd Font](https://www.nerdfonts.com/font-downloads) (for icons)
-
-## Install
-
-### Via Claude Code plugin (recommended)
+Via Claude Code plugin (Requires Python 3.10+, and a [Nerd Font](https://www.nerdfonts.com/font-downloads) to render the icons)
 
 ```bash
+# add the marketplace
 claude plugin marketplace add tmck-code/yet-another-statusline
+
+# to install or update
 claude plugin install yas@yet-another-statusline
 claude -p "/yas:init"
 ```
-
-`/yas:init` wires `statusLine.command` into `~/.claude/settings.json`. Reload Claude Code after it completes.
-
-**Upgrade:**
-```bash
-claude plugin install yas@yet-another-statusline
-claude -p "/yas:init"
-```
-
-`/yas:init` detects the new versioned path and rewrites it automatically.
-
-**Uninstall:**
-```bash
-claude -p "/yas:uninstall"
-claude plugin uninstall yas@yet-another-statusline
-```
-
-`claude plugin uninstall` only deletes the plugin cache — it leaves `statusLine.command`
-in `~/.claude/settings.json` pointing at the now-missing script, so the statusline keeps
-trying to run. Run `/yas:uninstall` **first** to remove that config (it backs up
-settings.json, and skips a custom non-yas statusLine) and clear the renderer's runtime
-logs. Reload Claude Code afterwards.
-
-### Via git clone (contributors / live-edit)
-
-Edits to the checkout take effect immediately — no reinstall step.
-
-```bash
-git clone https://github.com/tmck-code/yet-another-statusline
-cd yet-another-statusline
-```
-
-Wire `statusLine.command` in `~/.claude/settings.json` to point at the checkout:
-```json
-"statusLine": {
-  "async": true,
-  "command": "python3 \"/path/to/yet-another-statusline/claude/statusline_command.py\"",
-  "type": "command"
-}
-```
-
-> **Note:** if you also have the plugin installed, `claude plugin install` will overwrite
-> `statusLine.command` back to the plugin cache path. Either uninstall the plugin or bump
-> the version in `.claude-plugin/plugin.json` before reinstalling to keep your local path.
 
 ## Demo
 
@@ -128,6 +82,21 @@ Width is detected by the first source that returns a positive value:
 
 ---
 
+## Uninstalling
+
+```bash
+claude -p "/yas:uninstall"
+claude plugin uninstall yas@yet-another-statusline
+```
+
+`claude plugin uninstall` only deletes the plugin cache — it leaves `statusLine.command`
+in `~/.claude/settings.json` pointing at the now-missing script, so the statusline keeps
+trying to run. Run `/yas:uninstall` **first** to remove that config (it backs up
+settings.json, and skips a custom non-yas statusLine) and clear the renderer's runtime
+logs. Reload Claude Code afterwards.
+
+---
+
 ## Commands
 
 ```bash
@@ -145,5 +114,28 @@ Enable the git pre-commit hooks (runs `ruff` / `mypy` / `pytest` on staged Pytho
 ```bash
 make hooks
 ```
+
+### Installing via git clone
+
+Edits to the checkout take effect immediately — no reinstall step.
+
+```bash
+git clone https://github.com/tmck-code/yet-another-statusline
+cd yet-another-statusline
+```
+
+Wire `statusLine.command` in `~/.claude/settings.json` to point at the checkout:
+```json
+"statusLine": {
+  "async": true,
+  "command": "python3 \"/path/to/yet-another-statusline/claude/statusline_command.py\"",
+  "type": "command"
+}
+```
+
+> **Note:** if you also have the plugin installed, `claude plugin install` will overwrite
+> `statusLine.command` back to the plugin cache path. Either uninstall the plugin or bump
+> the version in `.claude-plugin/plugin.json` before reinstalling to keep your local path.
+
 
 This prompts before setting `core.hooksPath`. CI runs the same checks on every push, so the hook is fast local feedback rather than the gate.
