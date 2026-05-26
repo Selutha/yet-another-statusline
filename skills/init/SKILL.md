@@ -98,7 +98,7 @@ else
 fi
 
 _result=$(jq --arg cmd "\"$PYTHON_BIN\" \"$SCRIPT\"" \
-    '.statusLine = {"async":true,"command":$cmd,"type":"command"}' \
+    '.statusLine = {"async":true,"command":$cmd,"refreshInterval":1,"type":"command"}' \
     ~/.claude/settings.json)  # timeout: 5000
 [ $? -eq 0 ] && [ -n "$_result" ] || { printf "! jq failed — settings.json unchanged\n"; exit 1; }
 
