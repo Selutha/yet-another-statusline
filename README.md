@@ -40,3 +40,13 @@ To demo/test:
 ```bash
 make demo
 ```
+
+## Contributing
+
+Enable the git pre-commit hooks (runs `ruff` / `mypy` / `pytest` on staged Python before each commit):
+
+```bash
+make hooks
+```
+
+This prompts before setting `core.hooksPath`. CI runs the same checks on every push, so the hook is fast local feedback rather than the gate.

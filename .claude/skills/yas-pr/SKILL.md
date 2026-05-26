@@ -10,8 +10,10 @@ the template structure — read it from the repo so the two never drift.
 
 ## Steps
 
-1. **Sanity-check the branch.** Confirm the current branch is not `main` and has commits ahead
-   of `origin/main`. If it's `main` or has no diff, stop and tell the user.
+1. **Sanity-check the branch and hooks.** Confirm the current branch is not `main` and has
+   commits ahead of `origin/main`. If it's `main` or has no diff, stop and tell the user. Also
+   check `git config --local --get core.hooksPath`; if it isn't `.github/hooks`, offer to run
+   `make hooks` so the contributor gets pre-commit checks (don't enable it without their yes).
 
 2. **Read the template.** Load `.github/pull_request_template.md`. This is the single source of
    truth for the section structure — mirror its headings exactly.

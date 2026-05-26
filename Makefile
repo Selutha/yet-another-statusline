@@ -10,6 +10,18 @@ install:
 	@echo "installed -> $(INSTALL_DIR)/statusline_command.py"
 	@echo "installed -> $(INSTALL_DIR)/statusline/themes.py"
 
+hooks:
+	@if [ "$$(git config --local --get core.hooksPath)" = ".github/hooks" ]; then \
+		echo "pre-commit hooks already active (core.hooksPath=.github/hooks)"; \
+	else \
+		printf 'Enable this repo'\''s git hooks? Runs:\n  git config --local core.hooksPath .github/hooks\nProceed? [y/N] '; \
+		read ans; \
+		case "$$ans" in \
+			[yY]|[yY][eE][sS]) git config --local core.hooksPath .github/hooks && echo "hooks enabled -> .github/hooks";; \
+			*) echo "skipped";; \
+		esac; \
+	fi
+
 bench:
 	@uv run python ops/bench.py $(BENCH_ARGS)
 
@@ -40,4 +52,4 @@ mon/install:
 mon/run:
 	uv run python claude/mon.py
 
-.PHONY: install bench pr-info demo demo/img mon/install mon/run
+.PHONY: install hooks bench pr-info demo demo/img mon/install mon/run
